@@ -38,8 +38,8 @@ public final class JotReview {
     ///
     /// - Parameters:
     ///   - projectId: Your workspace's public project identifier.
-    ///   - baseURL: The JotReview instance URL. Defaults to `https://jotreview.app`.
-    public static func setup(projectId: String, baseURL: String = "https://jotreview.app") {
+    ///   - baseURL: The JotReview instance URL. Defaults to `https://go.jotreview.app`.
+    public static func setup(projectId: String, baseURL: String = "https://go.jotreview.app") {
         shared.config = JotReviewConfig(projectId: projectId, baseURL: baseURL)
         shared.visitorId = VisitorIdStore.getOrCreate()
 

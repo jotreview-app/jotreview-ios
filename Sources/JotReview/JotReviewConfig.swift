@@ -5,7 +5,7 @@ internal struct JotReviewConfig {
     /// The public project identifier used to authenticate API requests.
     let projectId: String
 
-    /// Base URL of the JotReview instance (e.g. "https://jotreview.app").
+    /// Base URL of the JotReview instance (e.g. "https://go.jotreview.app").
     let baseURL: String
 
     /// Workspace display info fetched asynchronously after setup.
