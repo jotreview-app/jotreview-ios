@@ -151,15 +151,143 @@ public struct ChangelogView: View {
 
     // MARK: - Entries List
 
+    @State private var selectedEntry: ChangelogEntry?
+
     private var entriesList: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 ForEach(viewModel.entries) { entry in
                     ChangelogEntryCard(entry: entry)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedEntry = entry }
                 }
             }
             .padding(16)
         }
+        .sheet(item: $selectedEntry) { entry in
+            ChangelogDetailView(entry: entry)
+        }
+    }
+}
+
+// MARK: - Detail View
+
+@available(iOS 15.0, macOS 12.0, *)
+private struct ChangelogDetailView: View {
+
+    @Environment(\.dismiss) private var dismiss
+    let entry: ChangelogEntry
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Cover image
+                    if let imageURL = entry.coverImageURL, let url = URL(string: imageURL) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 220)
+                                    .clipped()
+                            case .failure:
+                                Rectangle()
+                                    .fill(Color.secondary.opacity(0.08))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 220)
+                            case .empty:
+                                ZStack {
+                                    Rectangle()
+                                        .fill(Color.secondary.opacity(0.08))
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 220)
+                                    ProgressView()
+                                }
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Date
+                        if let publishedAt = entry.publishedAt {
+                            Text(formattedDate(publishedAt))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        }
+
+                        // Title
+                        Text(entry.title)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+
+                        // Full body
+                        if let body = entry.body, !body.isEmpty {
+                            Text(strippedHTML(body))
+                                .font(.body)
+                                .foregroundColor(.primary.opacity(0.85))
+                                .lineSpacing(4)
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .background(ChangelogPlatformColor.groupedBackground)
+            .navigationTitle("Update")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        #if os(iOS)
+        .navigationViewStyle(.stack)
+        #endif
+    }
+
+    private func formattedDate(_ iso: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: iso) {
+            return Self.displayFormatter.string(from: date)
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: iso) {
+            return Self.displayFormatter.string(from: date)
+        }
+        return String(iso.prefix(10))
+    }
+
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .none
+        return f
+    }()
+
+    private func strippedHTML(_ html: String) -> String {
+        let stripped = html
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+        return stripped
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 
