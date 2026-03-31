@@ -20,7 +20,7 @@ The SDK provides a lightweight Swift interface over JotReview's widget API with 
 1. In Xcode, go to **File > Add Package Dependencies...**
 2. Enter the repository URL:
    ```
-   https://github.com/jotreview/jotreview-ios
+   https://github.com/jotreview-app/jotreview-ios
    ```
 3. Select **Up to Next Major Version** with `1.0.0`.
 4. Click **Add Package** and add the `JotReview` library to your target.
@@ -31,7 +31,7 @@ Add JotReview as a dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/jotreview/jotreview-ios", from: "1.0.0"),
+    .package(url: "https://github.com/jotreview-app/jotreview-ios", from: "1.0.0"),
 ],
 targets: [
     .target(
