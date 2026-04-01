@@ -279,15 +279,85 @@ private struct ChangelogDetailView: View {
 
 // MARK: - Rich HTML Text Renderer
 
-/// Renders an HTML string as native styled text using `NSAttributedString`.
-/// Supports headings, bold, italic, lists, paragraphs, and links.
-@available(iOS 15.0, macOS 12.0, *)
-private struct RichHTMLText: View {
+#if canImport(UIKit) && !os(watchOS)
+import WebKit
+
+/// Renders an HTML string using a non-interactive `UITextView` which fully
+/// supports `NSAttributedString` paragraph styles including bullet points,
+/// numbered lists, and indentation from HTML `<ul>/<ol>/<li>` elements.
+@available(iOS 15.0, *)
+private struct RichHTMLText: UIViewRepresentable {
 
     let html: String
 
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        let styledHTML = """
+        <html>
+        <head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {
+                font-family: -apple-system, system-ui;
+                font-size: 16px;
+                line-height: 1.55;
+                color: #1c1c1e;
+                margin: 0;
+                padding: 0;
+            }
+            h1, h2, h3, h4 {
+                font-weight: 700;
+                margin-top: 20px;
+                margin-bottom: 8px;
+            }
+            h1 { font-size: 24px; }
+            h2 { font-size: 20px; }
+            h3 { font-size: 18px; }
+            p { margin-bottom: 12px; }
+            ul, ol {
+                padding-left: 24px;
+                margin-bottom: 12px;
+            }
+            li {
+                margin-bottom: 8px;
+            }
+        </style></head>
+        <body>\(html)</body>
+        </html>
+        """
+
+        guard let data = styledHTML.data(using: .utf8),
+              let nsAttr = try? NSAttributedString(
+                data: data,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+              )
+        else { return }
+
+        textView.attributedText = nsAttr
+    }
+}
+
+#else
+
+/// macOS fallback — uses SwiftUI Text with AttributedString.
+@available(macOS 12.0, *)
+private struct RichHTMLText: View {
+
+    let html: String
     @State private var attributedText: AttributedString?
-    @State private var textHeight: CGFloat = 0
 
     var body: some View {
         if let attributedText {
@@ -298,65 +368,23 @@ private struct RichHTMLText: View {
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity, alignment: .center)
-                .task { await renderHTML() }
-        }
-    }
-
-    private func renderHTML() async {
-        // Wrap in basic HTML structure with styling that maps to system fonts
-        let styledHTML = """
-        <html>
-        <head><style>
-            body {
-                font-family: -apple-system, system-ui;
-                font-size: 16px;
-                line-height: 1.6;
-                color: #1c1c1e;
-            }
-            h1, h2, h3, h4 {
-                font-weight: 700;
-                margin-top: 16px;
-                margin-bottom: 8px;
-            }
-            h1 { font-size: 24px; }
-            h2 { font-size: 20px; }
-            h3 { font-size: 18px; }
-            p { margin-bottom: 12px; }
-            ul, ol {
-                padding-left: 20px;
-                margin-bottom: 12px;
-            }
-            li { margin-bottom: 6px; }
-        </style></head>
-        <body>\(html)</body>
-        </html>
-        """
-
-        guard let data = styledHTML.data(using: .utf8) else { return }
-
-        // NSAttributedString HTML parsing must happen on main thread
-        let result: AttributedString? = await MainActor.run {
-            guard let nsAttr = try? NSAttributedString(
-                data: data,
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue
-                ],
-                documentAttributes: nil
-            ) else { return nil }
-
-            #if canImport(UIKit)
-            return try? AttributedString(nsAttr, including: \.uiKit)
-            #else
-            return try? AttributedString(nsAttr, including: \.appKit)
-            #endif
-        }
-
-        await MainActor.run {
-            self.attributedText = result
+                .task {
+                    let styledHTML = "<html><head><style>body{font-family:-apple-system;font-size:14px;line-height:1.6;}h1,h2,h3{font-weight:700;}ul,ol{padding-left:20px;}li{margin-bottom:4px;}</style></head><body>\(html)</body></html>"
+                    guard let data = styledHTML.data(using: .utf8),
+                          let nsAttr = try? NSAttributedString(
+                            data: data,
+                            options: [.documentType: NSAttributedString.DocumentType.html,
+                                      .characterEncoding: String.Encoding.utf8.rawValue],
+                            documentAttributes: nil
+                          )
+                    else { return }
+                    attributedText = try? AttributedString(nsAttr, including: \.appKit)
+                }
         }
     }
 }
+
+#endif
 
 // MARK: - Entry Card
 
