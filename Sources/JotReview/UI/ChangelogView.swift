@@ -280,15 +280,27 @@ private struct ChangelogDetailView: View {
 // MARK: - Rich HTML Text Renderer
 
 #if canImport(UIKit) && !os(watchOS)
-import WebKit
 
-/// Renders an HTML string using a non-interactive `UITextView` which fully
-/// supports `NSAttributedString` paragraph styles including bullet points,
-/// numbered lists, and indentation from HTML `<ul>/<ol>/<li>` elements.
+/// SwiftUI wrapper that renders HTML using a self-sizing `UITextView`.
+/// A two-layer design: the outer `View` holds height state, the inner
+/// `UIViewRepresentable` renders and reports its measured size back.
 @available(iOS 15.0, *)
-private struct RichHTMLText: UIViewRepresentable {
+private struct RichHTMLText: View {
 
     let html: String
+    @State private var height: CGFloat = 44 // initial estimate
+
+    var body: some View {
+        HTMLTextViewRepresentable(html: html, dynamicHeight: $height)
+            .frame(height: height)
+    }
+}
+
+@available(iOS 15.0, *)
+private struct HTMLTextViewRepresentable: UIViewRepresentable {
+
+    let html: String
+    @Binding var dynamicHeight: CGFloat
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -298,6 +310,7 @@ private struct RichHTMLText: UIViewRepresentable {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.defaultHigh, for: .vertical)
         return textView
     }
 
@@ -309,26 +322,27 @@ private struct RichHTMLText: UIViewRepresentable {
             body {
                 font-family: -apple-system, system-ui;
                 font-size: 16px;
-                line-height: 1.55;
+                line-height: 1.5;
                 color: #1c1c1e;
                 margin: 0;
                 padding: 0;
             }
             h1, h2, h3, h4 {
                 font-weight: 700;
-                margin-top: 20px;
-                margin-bottom: 8px;
+                margin-top: 16px;
+                margin-bottom: 6px;
             }
-            h1 { font-size: 24px; }
-            h2 { font-size: 20px; }
-            h3 { font-size: 18px; }
-            p { margin-bottom: 12px; }
+            h1 { font-size: 22px; }
+            h2 { font-size: 19px; }
+            h3 { font-size: 17px; }
+            p { margin-top: 0; margin-bottom: 10px; }
             ul, ol {
-                padding-left: 24px;
-                margin-bottom: 12px;
+                padding-left: 20px;
+                margin-top: 4px;
+                margin-bottom: 10px;
             }
             li {
-                margin-bottom: 8px;
+                margin-bottom: 4px;
             }
         </style></head>
         <body>\(html)</body>
@@ -347,6 +361,19 @@ private struct RichHTMLText: UIViewRepresentable {
         else { return }
 
         textView.attributedText = nsAttr
+
+        // Calculate the correct height after content is set
+        DispatchQueue.main.async {
+            let width = textView.bounds.width > 0
+                ? textView.bounds.width
+                : UIScreen.main.bounds.width - 40
+            let size = textView.sizeThatFits(
+                CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+            )
+            if abs(dynamicHeight - size.height) > 1 {
+                dynamicHeight = size.height
+            }
+        }
     }
 }
 
@@ -369,7 +396,7 @@ private struct RichHTMLText: View {
             ProgressView()
                 .frame(maxWidth: .infinity, alignment: .center)
                 .task {
-                    let styledHTML = "<html><head><style>body{font-family:-apple-system;font-size:14px;line-height:1.6;}h1,h2,h3{font-weight:700;}ul,ol{padding-left:20px;}li{margin-bottom:4px;}</style></head><body>\(html)</body></html>"
+                    let styledHTML = "<html><head><style>body{font-family:-apple-system;font-size:14px;line-height:1.5;}h1,h2,h3{font-weight:700;}ul,ol{padding-left:20px;}li{margin-bottom:2px;}</style></head><body>\(html)</body></html>"
                     guard let data = styledHTML.data(using: .utf8),
                           let nsAttr = try? NSAttributedString(
                             data: data,
