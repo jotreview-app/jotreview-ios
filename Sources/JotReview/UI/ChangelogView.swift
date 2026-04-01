@@ -230,12 +230,9 @@ private struct ChangelogDetailView: View {
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
 
-                        // Full body
+                        // Full body (rendered as rich text from HTML)
                         if let body = entry.body, !body.isEmpty {
-                            Text(strippedHTML(body))
-                                .font(.body)
-                                .foregroundColor(.primary.opacity(0.85))
-                                .lineSpacing(4)
+                            RichHTMLText(html: body)
                         }
                     }
                     .padding(20)
@@ -278,19 +275,86 @@ private struct ChangelogDetailView: View {
         return f
     }()
 
-    private func strippedHTML(_ html: String) -> String {
-        let stripped = html
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-        return stripped
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+}
+
+// MARK: - Rich HTML Text Renderer
+
+/// Renders an HTML string as native styled text using `NSAttributedString`.
+/// Supports headings, bold, italic, lists, paragraphs, and links.
+@available(iOS 15.0, macOS 12.0, *)
+private struct RichHTMLText: View {
+
+    let html: String
+
+    @State private var attributedText: AttributedString?
+    @State private var textHeight: CGFloat = 0
+
+    var body: some View {
+        if let attributedText {
+            Text(attributedText)
+                .font(.body)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .task { await renderHTML() }
+        }
+    }
+
+    private func renderHTML() async {
+        // Wrap in basic HTML structure with styling that maps to system fonts
+        let styledHTML = """
+        <html>
+        <head><style>
+            body {
+                font-family: -apple-system, system-ui;
+                font-size: 16px;
+                line-height: 1.6;
+                color: #1c1c1e;
+            }
+            h1, h2, h3, h4 {
+                font-weight: 700;
+                margin-top: 16px;
+                margin-bottom: 8px;
+            }
+            h1 { font-size: 24px; }
+            h2 { font-size: 20px; }
+            h3 { font-size: 18px; }
+            p { margin-bottom: 12px; }
+            ul, ol {
+                padding-left: 20px;
+                margin-bottom: 12px;
+            }
+            li { margin-bottom: 6px; }
+        </style></head>
+        <body>\(html)</body>
+        </html>
+        """
+
+        guard let data = styledHTML.data(using: .utf8) else { return }
+
+        // NSAttributedString HTML parsing must happen on main thread
+        let result: AttributedString? = await MainActor.run {
+            guard let nsAttr = try? NSAttributedString(
+                data: data,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+            ) else { return nil }
+
+            #if canImport(UIKit)
+            return try? AttributedString(nsAttr, including: \.uiKit)
+            #else
+            return try? AttributedString(nsAttr, including: \.appKit)
+            #endif
+        }
+
+        await MainActor.run {
+            self.attributedText = result
+        }
     }
 }
 
