@@ -291,87 +291,62 @@ internal struct ChangelogDetailView: View {
 }
 
 // MARK: - Rich HTML Text Renderer
+//
+// Pure SwiftUI approach: pre-process HTML to convert <li> to bullet text,
+// then render with NSAttributedString → AttributedString → SwiftUI Text.
+// No UITextView — avoids all iOS 26 sizing/blank-view issues.
 
-#if canImport(UIKit) && !os(watchOS)
-
-/// SwiftUI wrapper that renders HTML using a self-sizing `UITextView`.
-/// Uses an explicit height binding so the view is visible on first layout
-/// (sizeThatFits is called before updateUIView on iOS 26, causing blank initial state).
-@available(iOS 15.0, *)
+@available(iOS 15.0, macOS 12.0, *)
 private struct RichHTMLText: View {
 
     let html: String
-    @State private var height: CGFloat = 600 // generous default — shrinks after measurement
+    @State private var attributedText: AttributedString?
 
     var body: some View {
-        HTMLTextViewRepresentable(html: html, dynamicHeight: $height)
-            .frame(height: height)
-    }
-}
-
-@available(iOS 15.0, *)
-private struct HTMLTextViewRepresentable: UIViewRepresentable {
-
-    let html: String
-    @Binding var dynamicHeight: CGFloat
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    final class Coordinator {
-        var renderedHTML: String?
-    }
-
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.isEditable = false
-        textView.isScrollEnabled = false
-        textView.backgroundColor = .clear
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.setContentHuggingPriority(.defaultHigh, for: .vertical)
-        return textView
-    }
-
-    func updateUIView(_ textView: UITextView, context: Context) {
-        guard context.coordinator.renderedHTML != html else {
-            recalculateHeight(textView)
-            return
+        Group {
+            if let attributedText {
+                Text(attributedText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .center)
+            }
         }
-        context.coordinator.renderedHTML = html
+        .task { attributedText = Self.render(html) }
+    }
+
+    /// Converts HTML to a styled AttributedString suitable for SwiftUI Text.
+    /// Pre-processes list items into bullet text so NSAttributedString doesn't
+    /// need to handle NSTextList (which SwiftUI Text drops).
+    @MainActor
+    static func render(_ html: String) -> AttributedString? {
+        // Convert <li> to paragraphs with bullet character.
+        // This avoids NSTextList which SwiftUI Text can't render.
+        var processed = html
+        // Remove list wrappers
+        processed = processed.replacingOccurrences(
+            of: "</?[uo]l[^>]*>", with: "", options: .regularExpression)
+        // Convert list items to bullet paragraphs
+        processed = processed.replacingOccurrences(
+            of: "<li[^>]*>", with: "<p class=\"li\">\u{2022}  ", options: .regularExpression)
+        processed = processed.replacingOccurrences(of: "</li>", with: "</p>")
 
         let styledHTML = """
-        <html>
-        <head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <html><head>
         <style>
             body {
                 font-family: -apple-system, system-ui;
                 font-size: 16px;
                 line-height: 1.5;
                 color: #1c1c1e;
-                margin: 0;
-                padding: 0;
+                margin: 0; padding: 0;
             }
-            h1, h2, h3, h4 {
-                font-weight: 700;
-                margin-top: 12px;
-                margin-bottom: 4px;
-            }
-            h1 { font-size: 22px; }
-            h2 { font-size: 19px; }
-            h3 { font-size: 17px; }
-            p { margin-top: 0; margin-bottom: 8px; }
-            ul, ol {
-                padding-left: 24px;
-                margin-top: 2px;
-                margin-bottom: 8px;
-            }
-            li {
-                margin-bottom: 0;
-            }
-        </style></head>
-        <body>\(html)</body>
-        </html>
+            h1, h2, h3, h4 { font-weight: 700; margin-top: 14px; margin-bottom: 4px; }
+            h1 { font-size: 22px; } h2 { font-size: 19px; } h3 { font-size: 17px; }
+            p { margin: 0 0 6px 0; }
+            p.li { margin: 0 0 4px 20px; }
+        </style>
+        </head><body>\(processed)</body></html>
         """
 
         guard let data = styledHTML.data(using: .utf8),
@@ -383,77 +358,27 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
                 ],
                 documentAttributes: nil
               )
-        else { return }
+        else { return nil }
 
-        // Post-process: zero out paragraph spacing added by the HTML parser.
-        // All visual spacing comes from CSS line-height instead.
+        // Clamp paragraph spacing the HTML parser adds on top of CSS.
         let mutable = NSMutableAttributedString(attributedString: nsAttr)
         mutable.enumerateAttribute(
-            .paragraphStyle,
-            in: NSRange(location: 0, length: mutable.length)
+            .paragraphStyle, in: NSRange(location: 0, length: mutable.length)
         ) { value, range, _ in
             guard let style = value as? NSParagraphStyle else { return }
-            let newStyle = style.mutableCopy() as! NSMutableParagraphStyle
-            newStyle.paragraphSpacing = min(style.paragraphSpacing, 2)
-            newStyle.paragraphSpacingBefore = 0
-            mutable.addAttribute(.paragraphStyle, value: newStyle, range: range)
+            let s = style.mutableCopy() as! NSMutableParagraphStyle
+            s.paragraphSpacing = min(style.paragraphSpacing, 4)
+            s.paragraphSpacingBefore = 0
+            mutable.addAttribute(.paragraphStyle, value: s, range: range)
         }
 
-        textView.attributedText = mutable
-        textView.invalidateIntrinsicContentSize()
-        recalculateHeight(textView)
-    }
-
-    private func recalculateHeight(_ textView: UITextView) {
-        let width = textView.bounds.width > 0
-            ? textView.bounds.width
-            : UIScreen.main.bounds.width - 40
-        let size = textView.sizeThatFits(
-            CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        )
-        if size.height > 0 && abs(dynamicHeight - size.height) > 1 {
-            DispatchQueue.main.async {
-                dynamicHeight = size.height
-            }
-        }
+        #if canImport(UIKit)
+        return try? AttributedString(mutable, including: \.uiKit)
+        #else
+        return try? AttributedString(mutable, including: \.appKit)
+        #endif
     }
 }
-
-#else
-
-/// macOS fallback — uses SwiftUI Text with AttributedString.
-@available(macOS 12.0, *)
-private struct RichHTMLText: View {
-
-    let html: String
-    @State private var attributedText: AttributedString?
-
-    var body: some View {
-        if let attributedText {
-            Text(attributedText)
-                .font(.body)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            ProgressView()
-                .frame(maxWidth: .infinity, alignment: .center)
-                .task {
-                    let styledHTML = "<html><head><style>body{font-family:-apple-system;font-size:14px;line-height:1.5;}h1,h2,h3{font-weight:700;}ul,ol{padding-left:20px;}li{margin-bottom:2px;}</style></head><body>\(html)</body></html>"
-                    guard let data = styledHTML.data(using: .utf8),
-                          let nsAttr = try? NSAttributedString(
-                            data: data,
-                            options: [.documentType: NSAttributedString.DocumentType.html,
-                                      .characterEncoding: String.Encoding.utf8.rawValue],
-                            documentAttributes: nil
-                          )
-                    else { return }
-                    attributedText = try? AttributedString(nsAttr, including: \.appKit)
-                }
-        }
-    }
-}
-
-#endif
 
 // MARK: - Entry Card
 
