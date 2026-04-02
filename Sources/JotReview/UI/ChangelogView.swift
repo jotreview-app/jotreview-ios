@@ -182,7 +182,7 @@ internal struct ChangelogDetailView: View {
     let entry: ChangelogEntry
 
     var body: some View {
-        NavigationView {
+        detailNavigation {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     // Cover image
@@ -242,6 +242,7 @@ internal struct ChangelogDetailView: View {
             .navigationTitle("Update")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -250,8 +251,20 @@ internal struct ChangelogDetailView: View {
                 }
             }
         }
+    }
+
+    /// Use NavigationStack on iOS 16+ (fixes sheet insets on iOS 26),
+    /// fall back to NavigationView on iOS 15.
+    @ViewBuilder
+    private func detailNavigation<C: View>(@ViewBuilder content: () -> C) -> some View {
         #if os(iOS)
-        .navigationViewStyle(.stack)
+        if #available(iOS 16.0, *) {
+            NavigationStack { content() }
+        } else {
+            NavigationView { content() }.navigationViewStyle(.stack)
+        }
+        #else
+        NavigationView { content() }
         #endif
     }
 
@@ -367,7 +380,21 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
               )
         else { return }
 
-        textView.attributedText = nsAttr
+        // Post-process: clamp paragraph spacing that NSAttributedString's
+        // HTML parser adds on top of CSS margins (causes excessive gaps).
+        let mutable = NSMutableAttributedString(attributedString: nsAttr)
+        mutable.enumerateAttribute(
+            .paragraphStyle,
+            in: NSRange(location: 0, length: mutable.length)
+        ) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            let newStyle = style.mutableCopy() as! NSMutableParagraphStyle
+            newStyle.paragraphSpacing = min(style.paragraphSpacing, 6)
+            newStyle.paragraphSpacingBefore = min(style.paragraphSpacingBefore, 2)
+            mutable.addAttribute(.paragraphStyle, value: newStyle, range: range)
+        }
+
+        textView.attributedText = mutable
         textView.invalidateIntrinsicContentSize()
     }
 
