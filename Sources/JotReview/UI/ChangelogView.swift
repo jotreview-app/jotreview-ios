@@ -389,8 +389,8 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
         ) { value, range, _ in
             guard let style = value as? NSParagraphStyle else { return }
             let newStyle = style.mutableCopy() as! NSMutableParagraphStyle
-            newStyle.paragraphSpacing = min(style.paragraphSpacing, 6)
-            newStyle.paragraphSpacingBefore = min(style.paragraphSpacingBefore, 2)
+            newStyle.paragraphSpacing = min(style.paragraphSpacing, 2)
+            newStyle.paragraphSpacingBefore = 0
             mutable.addAttribute(.paragraphStyle, value: newStyle, range: range)
         }
 
