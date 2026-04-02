@@ -295,16 +295,17 @@ internal struct ChangelogDetailView: View {
 #if canImport(UIKit) && !os(watchOS)
 
 /// SwiftUI wrapper that renders HTML using a self-sizing `UITextView`.
-/// Leverages `UIViewRepresentable.sizeThatFits` (iOS 16+) so SwiftUI
-/// provides the correct proposed width — no GeometryReader or manual
-/// height Bindings needed.
+/// Uses an explicit height binding so the view is visible on first layout
+/// (sizeThatFits is called before updateUIView on iOS 26, causing blank initial state).
 @available(iOS 15.0, *)
 private struct RichHTMLText: View {
 
     let html: String
+    @State private var height: CGFloat = 600 // generous default — shrinks after measurement
 
     var body: some View {
-        HTMLTextViewRepresentable(html: html)
+        HTMLTextViewRepresentable(html: html, dynamicHeight: $height)
+            .frame(height: height)
     }
 }
 
@@ -312,6 +313,7 @@ private struct RichHTMLText: View {
 private struct HTMLTextViewRepresentable: UIViewRepresentable {
 
     let html: String
+    @Binding var dynamicHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -332,7 +334,10 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
-        guard context.coordinator.renderedHTML != html else { return }
+        guard context.coordinator.renderedHTML != html else {
+            recalculateHeight(textView)
+            return
+        }
         context.coordinator.renderedHTML = html
 
         let styledHTML = """
@@ -349,20 +354,20 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
             }
             h1, h2, h3, h4 {
                 font-weight: 700;
-                margin-top: 16px;
-                margin-bottom: 6px;
+                margin-top: 12px;
+                margin-bottom: 4px;
             }
             h1 { font-size: 22px; }
             h2 { font-size: 19px; }
             h3 { font-size: 17px; }
-            p { margin-top: 0; margin-bottom: 10px; }
+            p { margin-top: 0; margin-bottom: 8px; }
             ul, ol {
                 padding-left: 24px;
-                margin-top: 4px;
-                margin-bottom: 10px;
+                margin-top: 2px;
+                margin-bottom: 8px;
             }
             li {
-                margin-bottom: 6px;
+                margin-bottom: 0;
             }
         </style></head>
         <body>\(html)</body>
@@ -380,8 +385,8 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
               )
         else { return }
 
-        // Post-process: clamp paragraph spacing that NSAttributedString's
-        // HTML parser adds on top of CSS margins (causes excessive gaps).
+        // Post-process: zero out paragraph spacing added by the HTML parser.
+        // All visual spacing comes from CSS line-height instead.
         let mutable = NSMutableAttributedString(attributedString: nsAttr)
         mutable.enumerateAttribute(
             .paragraphStyle,
@@ -396,14 +401,21 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
 
         textView.attributedText = mutable
         textView.invalidateIntrinsicContentSize()
+        recalculateHeight(textView)
     }
 
-    // iOS 16+: SwiftUI calls this with the actual proposed width from layout,
-    // so height calculation uses the correct width — no manual measurement needed.
-    @available(iOS 16.0, macOS 13.0, *)
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? UIScreen.main.bounds.width
-        return uiView.sizeThatFits(CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
+    private func recalculateHeight(_ textView: UITextView) {
+        let width = textView.bounds.width > 0
+            ? textView.bounds.width
+            : UIScreen.main.bounds.width - 40
+        let size = textView.sizeThatFits(
+            CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        )
+        if size.height > 0 && abs(dynamicHeight - size.height) > 1 {
+            DispatchQueue.main.async {
+                dynamicHeight = size.height
+            }
+        }
     }
 }
 
