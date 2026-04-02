@@ -152,7 +152,6 @@ public struct ChangelogView: View {
     // MARK: - Entries List
 
     @State private var selectedEntry: ChangelogEntry?
-    @Namespace private var zoomNamespace
 
     private var entriesList: some View {
         ScrollView {
@@ -161,14 +160,12 @@ public struct ChangelogView: View {
                     ChangelogEntryCard(entry: entry)
                         .contentShape(Rectangle())
                         .onTapGesture { selectedEntry = entry }
-                        .applyMatchedSource(id: entry.id, in: zoomNamespace)
                 }
             }
             .padding(16)
         }
         .sheet(item: $selectedEntry) { entry in
             ChangelogDetailView(entry: entry)
-                .applyZoomTransition(sourceID: entry.id, in: zoomNamespace)
         }
     }
 }
@@ -512,34 +509,10 @@ internal struct ChangelogEntryCard: View {
     }
 }
 
-// MARK: - Zoom Transition Helpers (iOS 18+, graceful fallback)
+// MARK: - Availability Helpers
 
 @available(iOS 15.0, macOS 12.0, *)
 private extension View {
-    /// Marks this view as the source of a zoom transition on iOS 18+. No-op on older versions.
-    @ViewBuilder
-    func applyMatchedSource(id: String, in namespace: Namespace.ID) -> some View {
-        if #available(iOS 18.0, macOS 15.0, *) {
-            self.matchedTransitionSource(id: id, in: namespace)
-        } else {
-            self
-        }
-    }
-
-    /// Applies a zoom navigation transition on iOS 18+. No-op on older versions and macOS.
-    @ViewBuilder
-    func applyZoomTransition(sourceID: String, in namespace: Namespace.ID) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.navigationTransition(.zoom(sourceID: sourceID, in: namespace))
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
     /// Makes the navigation bar background visible on iOS 16+. No-op on older versions.
     @ViewBuilder
     func applyVisibleToolbarBackground() -> some View {
