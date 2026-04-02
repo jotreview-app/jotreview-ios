@@ -77,7 +77,7 @@ public struct ChangelogView: View {
                 .background(ChangelogPlatformColor.groupedBackground)
                 .navigationTitle("What's New")
                 #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.large)
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -176,7 +176,7 @@ public struct ChangelogView: View {
 // MARK: - Detail View
 
 @available(iOS 15.0, macOS 12.0, *)
-private struct ChangelogDetailView: View {
+internal struct ChangelogDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     let entry: ChangelogEntry
@@ -282,17 +282,16 @@ private struct ChangelogDetailView: View {
 #if canImport(UIKit) && !os(watchOS)
 
 /// SwiftUI wrapper that renders HTML using a self-sizing `UITextView`.
-/// A two-layer design: the outer `View` holds height state, the inner
-/// `UIViewRepresentable` renders and reports its measured size back.
+/// Leverages `UIViewRepresentable.sizeThatFits` (iOS 16+) so SwiftUI
+/// provides the correct proposed width — no GeometryReader or manual
+/// height Bindings needed.
 @available(iOS 15.0, *)
 private struct RichHTMLText: View {
 
     let html: String
-    @State private var height: CGFloat = 44 // initial estimate
 
     var body: some View {
-        HTMLTextViewRepresentable(html: html, dynamicHeight: $height)
-            .frame(height: height)
+        HTMLTextViewRepresentable(html: html)
     }
 }
 
@@ -300,7 +299,12 @@ private struct RichHTMLText: View {
 private struct HTMLTextViewRepresentable: UIViewRepresentable {
 
     let html: String
-    @Binding var dynamicHeight: CGFloat
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var renderedHTML: String?
+    }
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -315,6 +319,9 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        guard context.coordinator.renderedHTML != html else { return }
+        context.coordinator.renderedHTML = html
+
         let styledHTML = """
         <html>
         <head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -337,12 +344,12 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
             h3 { font-size: 17px; }
             p { margin-top: 0; margin-bottom: 10px; }
             ul, ol {
-                padding-left: 20px;
+                padding-left: 24px;
                 margin-top: 4px;
                 margin-bottom: 10px;
             }
             li {
-                margin-bottom: 4px;
+                margin-bottom: 6px;
             }
         </style></head>
         <body>\(html)</body>
@@ -361,19 +368,15 @@ private struct HTMLTextViewRepresentable: UIViewRepresentable {
         else { return }
 
         textView.attributedText = nsAttr
+        textView.invalidateIntrinsicContentSize()
+    }
 
-        // Calculate the correct height after content is set
-        DispatchQueue.main.async {
-            let width = textView.bounds.width > 0
-                ? textView.bounds.width
-                : UIScreen.main.bounds.width - 40
-            let size = textView.sizeThatFits(
-                CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-            )
-            if abs(dynamicHeight - size.height) > 1 {
-                dynamicHeight = size.height
-            }
-        }
+    // iOS 16+: SwiftUI calls this with the actual proposed width from layout,
+    // so height calculation uses the correct width — no manual measurement needed.
+    @available(iOS 16.0, macOS 13.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? UIScreen.main.bounds.width
+        return uiView.sizeThatFits(CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
     }
 }
 
@@ -416,7 +419,7 @@ private struct RichHTMLText: View {
 // MARK: - Entry Card
 
 @available(iOS 15.0, macOS 12.0, *)
-private struct ChangelogEntryCard: View {
+internal struct ChangelogEntryCard: View {
 
     let entry: ChangelogEntry
 
@@ -551,13 +554,17 @@ private extension View {
         }
     }
 
-    /// Applies a zoom navigation transition on iOS 18+. No-op on older versions.
+    /// Applies a zoom navigation transition on iOS 18+. No-op on older versions and macOS.
     @ViewBuilder
     func applyZoomTransition(sourceID: String, in namespace: Namespace.ID) -> some View {
-        if #available(iOS 18.0, macOS 15.0, *) {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
             self.navigationTransition(.zoom(sourceID: sourceID, in: namespace))
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }
