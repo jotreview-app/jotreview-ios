@@ -323,26 +323,35 @@ private struct RichHTMLText: View {
     static func render(_ html: String) -> AttributedString? {
         var h = html
 
-        // 1. Convert list items to bullet text with single <br> between them.
-        //    Remove <ul>/<ol> wrappers but add <br> after list ends for gap.
-        h = h.replacingOccurrences(of: "<ul[^>]*>", with: "", options: .regularExpression)
-        h = h.replacingOccurrences(of: "</ul>", with: "<br>")
-        h = h.replacingOccurrences(of: "<ol[^>]*>", with: "", options: .regularExpression)
-        h = h.replacingOccurrences(of: "</ol>", with: "<br>")
+        // 1. Strip list wrappers and surrounding whitespace.
         h = h.replacingOccurrences(
-            of: "<li[^>]*>", with: "   \u{2022}  ", options: .regularExpression)
-        h = h.replacingOccurrences(of: "</li>", with: "<br>")
+            of: "\\s*</?[uo]l[^>]*>\\s*", with: "", options: .regularExpression)
 
-        // 2. Add spacing after paragraphs: </p> → </p><br> (creates blank line).
-        h = h.replacingOccurrences(of: "</p>", with: "</p><br>")
-
-        // 3. Add spacing before headings: extra <br> above.
+        // 2. Convert <li> to inline bullet text. Crucially, \\s* captures
+        //    any newlines/spaces INSIDE the tag so bullet stays on same line as text.
         h = h.replacingOccurrences(
-            of: "<h([1-6])", with: "<br><h$1", options: .regularExpression)
+            of: "<li[^>]*>\\s*", with: "\u{2022} ", options: .regularExpression)
+        h = h.replacingOccurrences(
+            of: "\\s*</li>\\s*", with: "<br>", options: .regularExpression)
 
-        // 4. Clean up excessive <br> runs (max 2 in a row).
+        // 3. Convert </p> to double <br> for paragraph gap.
+        //    Remove <p> opening tag (content becomes inline text).
+        h = h.replacingOccurrences(
+            of: "\\s*</p>\\s*", with: "<br><br>", options: .regularExpression)
+        h = h.replacingOccurrences(
+            of: "<p[^>]*>\\s*", with: "", options: .regularExpression)
+
+        // 4. Add gap before headings.
+        h = h.replacingOccurrences(
+            of: "\\s*<h([1-6])", with: "<br><br><h$1", options: .regularExpression)
+
+        // 5. Collapse 3+ consecutive <br> into exactly 2 (one blank line).
         h = h.replacingOccurrences(
             of: "(<br\\s*/?>\\s*){3,}", with: "<br><br>", options: .regularExpression)
+
+        // 6. Remove leading <br> at start of body content.
+        h = h.replacingOccurrences(
+            of: "^\\s*(<br\\s*/?>\\s*)+", with: "", options: .regularExpression)
 
         let styledHTML = """
         <html><head>
@@ -350,13 +359,12 @@ private struct RichHTMLText: View {
             body {
                 font-family: -apple-system, system-ui;
                 font-size: 16px;
-                line-height: 1.45;
+                line-height: 1.5;
                 color: #1c1c1e;
                 margin: 0; padding: 0;
             }
             h1, h2, h3, h4 { font-weight: 700; margin: 0; padding: 0; }
             h1 { font-size: 22px; } h2 { font-size: 19px; } h3 { font-size: 17px; }
-            p { margin: 0; padding: 0; }
         </style>
         </head><body>\(h)</body></html>
         """
@@ -371,9 +379,6 @@ private struct RichHTMLText: View {
                 documentAttributes: nil
               )
         else { return nil }
-
-        // No paragraph style post-processing needed — all spacing comes
-        // from \n characters injected via <br> tags above.
 
         #if canImport(UIKit)
         return try? AttributedString(nsAttr, including: \.uiKit)
