@@ -242,7 +242,7 @@ internal struct ChangelogDetailView: View {
             .navigationTitle("Update")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .applyVisibleToolbarBackground()
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -593,5 +593,15 @@ private extension View {
         #else
         self
         #endif
+    }
+
+    /// Makes the navigation bar background visible on iOS 16+. No-op on older versions.
+    @ViewBuilder
+    func applyVisibleToolbarBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            self
+        }
     }
 }
