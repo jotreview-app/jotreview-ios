@@ -292,9 +292,13 @@ internal struct ChangelogDetailView: View {
 
 // MARK: - Rich HTML Text Renderer
 //
-// Pure SwiftUI approach: pre-process HTML to convert <li> to bullet text,
-// then render with NSAttributedString → AttributedString → SwiftUI Text.
-// No UITextView — avoids all iOS 26 sizing/blank-view issues.
+// SwiftUI Text DOES NOT render NSParagraphStyle.paragraphSpacing from
+// AttributedString. CSS margins are silently ignored. The only way to
+// create visual spacing is through actual \n characters in the string.
+//
+// Strategy: pre-process HTML to inject <br> tags for spacing, convert
+// bullets to • text, then parse with NSAttributedString for inline
+// styles (bold, headings, italic). No UITextView, no paragraph hacks.
 
 @available(iOS 15.0, macOS 12.0, *)
 private struct RichHTMLText: View {
@@ -315,21 +319,30 @@ private struct RichHTMLText: View {
         .task { attributedText = Self.render(html) }
     }
 
-    /// Converts HTML to a styled AttributedString suitable for SwiftUI Text.
-    /// Pre-processes list items into bullet text so NSAttributedString doesn't
-    /// need to handle NSTextList (which SwiftUI Text drops).
     @MainActor
     static func render(_ html: String) -> AttributedString? {
-        // Convert <li> to paragraphs with bullet character.
-        // This avoids NSTextList which SwiftUI Text can't render.
-        var processed = html
-        // Remove list wrappers
-        processed = processed.replacingOccurrences(
-            of: "</?[uo]l[^>]*>", with: "", options: .regularExpression)
-        // Convert list items to bullet paragraphs
-        processed = processed.replacingOccurrences(
-            of: "<li[^>]*>", with: "<p class=\"li\">\u{2022}  ", options: .regularExpression)
-        processed = processed.replacingOccurrences(of: "</li>", with: "</p>")
+        var h = html
+
+        // 1. Convert list items to bullet text with single <br> between them.
+        //    Remove <ul>/<ol> wrappers but add <br> after list ends for gap.
+        h = h.replacingOccurrences(of: "<ul[^>]*>", with: "", options: .regularExpression)
+        h = h.replacingOccurrences(of: "</ul>", with: "<br>")
+        h = h.replacingOccurrences(of: "<ol[^>]*>", with: "", options: .regularExpression)
+        h = h.replacingOccurrences(of: "</ol>", with: "<br>")
+        h = h.replacingOccurrences(
+            of: "<li[^>]*>", with: "   \u{2022}  ", options: .regularExpression)
+        h = h.replacingOccurrences(of: "</li>", with: "<br>")
+
+        // 2. Add spacing after paragraphs: </p> → </p><br> (creates blank line).
+        h = h.replacingOccurrences(of: "</p>", with: "</p><br>")
+
+        // 3. Add spacing before headings: extra <br> above.
+        h = h.replacingOccurrences(
+            of: "<h([1-6])", with: "<br><h$1", options: .regularExpression)
+
+        // 4. Clean up excessive <br> runs (max 2 in a row).
+        h = h.replacingOccurrences(
+            of: "(<br\\s*/?>\\s*){3,}", with: "<br><br>", options: .regularExpression)
 
         let styledHTML = """
         <html><head>
@@ -337,16 +350,15 @@ private struct RichHTMLText: View {
             body {
                 font-family: -apple-system, system-ui;
                 font-size: 16px;
-                line-height: 1.5;
+                line-height: 1.45;
                 color: #1c1c1e;
                 margin: 0; padding: 0;
             }
-            h1, h2, h3, h4 { font-weight: 700; margin-top: 14px; margin-bottom: 4px; }
+            h1, h2, h3, h4 { font-weight: 700; margin: 0; padding: 0; }
             h1 { font-size: 22px; } h2 { font-size: 19px; } h3 { font-size: 17px; }
-            p { margin: 0 0 6px 0; }
-            p.li { margin: 0 0 4px 20px; }
+            p { margin: 0; padding: 0; }
         </style>
-        </head><body>\(processed)</body></html>
+        </head><body>\(h)</body></html>
         """
 
         guard let data = styledHTML.data(using: .utf8),
@@ -360,22 +372,13 @@ private struct RichHTMLText: View {
               )
         else { return nil }
 
-        // Clamp paragraph spacing the HTML parser adds on top of CSS.
-        let mutable = NSMutableAttributedString(attributedString: nsAttr)
-        mutable.enumerateAttribute(
-            .paragraphStyle, in: NSRange(location: 0, length: mutable.length)
-        ) { value, range, _ in
-            guard let style = value as? NSParagraphStyle else { return }
-            let s = style.mutableCopy() as! NSMutableParagraphStyle
-            s.paragraphSpacing = min(style.paragraphSpacing, 4)
-            s.paragraphSpacingBefore = 0
-            mutable.addAttribute(.paragraphStyle, value: s, range: range)
-        }
+        // No paragraph style post-processing needed — all spacing comes
+        // from \n characters injected via <br> tags above.
 
         #if canImport(UIKit)
-        return try? AttributedString(mutable, including: \.uiKit)
+        return try? AttributedString(nsAttr, including: \.uiKit)
         #else
-        return try? AttributedString(mutable, including: \.appKit)
+        return try? AttributedString(nsAttr, including: \.appKit)
         #endif
     }
 }
