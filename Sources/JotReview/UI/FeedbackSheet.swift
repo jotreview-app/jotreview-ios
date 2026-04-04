@@ -167,6 +167,9 @@ public struct FeedbackSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = FeedbackViewModel()
 
+    private enum Field: Hashable { case title, description }
+    @FocusState private var focusedField: Field?
+
     @State private var title: String = ""
     @State private var descriptionText: String = ""
     @State private var attachmentUrls: [String] = []
@@ -195,6 +198,7 @@ public struct FeedbackSheet: View {
                     poweredByFooter
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(PlatformColor.groupedBackground)
             .navigationTitle("Send Feedback")
             #if os(iOS)
@@ -205,10 +209,20 @@ public struct FeedbackSheet: View {
                     Button("Close") { dismiss() }
                         .foregroundColor(.secondary)
                 }
+                if focusedField != nil {
+                    ToolbarItem(placement: .keyboard) {
+                        HStack {
+                            Spacer()
+                            Button("Done") { focusedField = nil }
+                                .fontWeight(.medium)
+                        }
+                    }
+                }
             }
             .task { await viewModel.loadRequests(config: config) }
             .onChange(of: viewModel.shouldClearForm) { cleared in
                 if cleared {
+                    focusedField = nil
                     title = ""
                     descriptionText = ""
                     attachmentUrls = []
@@ -233,6 +247,7 @@ public struct FeedbackSheet: View {
                     .foregroundColor(.primary)
 
                 TextField("What's your feedback?", text: $title)
+                    .focused($focusedField, equals: .title)
                     .textFieldStyle(.plain)
                     .padding(12)
                     .background(PlatformColor.cardBackground)
@@ -251,6 +266,7 @@ public struct FeedbackSheet: View {
                     .foregroundColor(.primary)
 
                 TextEditor(text: $descriptionText)
+                    .focused($focusedField, equals: .description)
                     .frame(minHeight: 80, maxHeight: 160)
                     .padding(8)
                     .background(PlatformColor.cardBackground)
@@ -285,6 +301,7 @@ public struct FeedbackSheet: View {
             || viewModel.submitState == .submitting
 
         Button {
+            focusedField = nil
             Task {
                 let desc = descriptionText.isEmpty ? nil : descriptionText
                 await viewModel.submit(
