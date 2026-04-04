@@ -42,6 +42,19 @@ private enum PlatformColor {
     }
 }
 
+// MARK: - Scroll Dismiss Keyboard (iOS 16+)
+
+@available(iOS 15.0, macOS 12.0, *)
+private struct ScrollDismissKeyboardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            content.scrollDismissesKeyboard(.interactively)
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Submit State
 
 @available(iOS 15.0, macOS 12.0, *)
@@ -198,7 +211,7 @@ public struct FeedbackSheet: View {
                     poweredByFooter
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            .modifier(ScrollDismissKeyboardModifier())
             .background(PlatformColor.groupedBackground)
             .navigationTitle("Send Feedback")
             #if os(iOS)
@@ -209,13 +222,12 @@ public struct FeedbackSheet: View {
                     Button("Close") { dismiss() }
                         .foregroundColor(.secondary)
                 }
-                if focusedField != nil {
-                    ToolbarItem(placement: .keyboard) {
-                        HStack {
-                            Spacer()
-                            Button("Done") { focusedField = nil }
-                                .fontWeight(.medium)
-                        }
+            }
+            .toolbar {
+                ToolbarItem(placement: .keyboard) {
+                    HStack {
+                        Spacer()
+                        Button("Done") { focusedField = nil }
                     }
                 }
             }
