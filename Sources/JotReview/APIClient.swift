@@ -100,16 +100,44 @@ internal final class APIClient: Sendable {
         }
     }
 
-    /// Fetches top feedback requests ordered by vote count.
+    /// Fetches feedback requests for an identified user, ordered by creation date.
     ///
-    /// **GET** `/api/widget/v1/requests?projectId=<id>&limit=<n>`
+    /// **GET** `/api/widget/v1/requests?projectId=<id>&limit=<n>[&externalId=<id>][&email=<email>]`
     ///
-    /// - Returns: An array of `FeedbackRequest` values.
-    func fetchRequests(projectId: String, baseURL: String, limit: Int = 50) async throws -> [FeedbackRequest] {
-        let url = try buildURL(base: baseURL, path: "/api/widget/v1/requests", queryItems: [
+    /// Pass the user's `externalId` and/or `email` to filter results to that
+    /// user's own submissions. If neither is provided this method returns an
+    /// empty array without hitting the network — anonymous users do not have
+    /// personal feedback to display.
+    ///
+    /// - Parameters:
+    ///   - projectId: The workspace project ID.
+    ///   - baseURL: The server base URL.
+    ///   - externalId: The host app's user identifier (from `UserIdentity.id`).
+    ///   - email: The user's email address (from `UserIdentity.email`).
+    ///   - limit: Maximum number of results to return (default 50).
+    /// - Returns: An array of `FeedbackRequest` values belonging to the user.
+    func fetchRequests(
+        projectId: String,
+        baseURL: String,
+        externalId: String? = nil,
+        email: String? = nil,
+        limit: Int = 50
+    ) async throws -> [FeedbackRequest] {
+        // Anonymous users have no personal submissions to show — skip the network call.
+        guard externalId != nil || email != nil else { return [] }
+
+        var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "projectId", value: projectId),
             URLQueryItem(name: "limit", value: String(limit)),
-        ])
+        ]
+        if let externalId {
+            queryItems.append(URLQueryItem(name: "externalId", value: externalId))
+        }
+        if let email {
+            queryItems.append(URLQueryItem(name: "email", value: email))
+        }
+
+        let url = try buildURL(base: baseURL, path: "/api/widget/v1/requests", queryItems: queryItems)
 
         let data = try await performGET(url: url)
 

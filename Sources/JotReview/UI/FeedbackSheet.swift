@@ -77,14 +77,26 @@ internal final class FeedbackViewModel: ObservableObject {
 
     // MARK: - Load Requests
 
-    func loadRequests(config: JotReviewConfig) async {
+    /// Loads the identified user's own submissions.
+    ///
+    /// Requires at least one identity field (`id` or `email`) to be present;
+    /// if `user` is `nil` the method returns immediately without a network call
+    /// and leaves `requests` empty.
+    func loadRequests(config: JotReviewConfig, user: UserIdentity?) async {
+        guard user != nil else {
+            requests = []
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 
         do {
             let fetched = try await APIClient.shared.fetchRequests(
                 projectId: config.projectId,
-                baseURL: config.baseURL
+                baseURL: config.baseURL,
+                externalId: user?.id,
+                email: user?.email
             )
             requests = fetched
         } catch {
@@ -130,7 +142,7 @@ internal final class FeedbackViewModel: ObservableObject {
             shouldClearForm = true
 
             // Refresh the list so the new item appears
-            await loadRequests(config: config)
+            await loadRequests(config: config, user: user)
 
             // Auto-reset after a short delay so the user can submit again
             try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -206,8 +218,10 @@ public struct FeedbackSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     submitFormSection
-                    divider
-                    existingRequestsSection
+                    if user != nil {
+                        divider
+                        yourFeedbackSection
+                    }
                     poweredByFooter
                 }
             }
@@ -231,7 +245,7 @@ public struct FeedbackSheet: View {
                     }
                 }
             }
-            .task { await viewModel.loadRequests(config: config) }
+            .task { await viewModel.loadRequests(config: config, user: user) }
             .onChange(of: viewModel.shouldClearForm) { cleared in
                 if cleared {
                     focusedField = nil
@@ -374,11 +388,13 @@ public struct FeedbackSheet: View {
             .padding(.horizontal, 16)
     }
 
-    // MARK: - Existing Requests
+    // MARK: - Your Feedback
 
-    private var existingRequestsSection: some View {
+    /// Shows the identified user's own past submissions.
+    /// Only rendered when `user` is non-nil; the caller (body) gates visibility.
+    private var yourFeedbackSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Existing Feedback")
+            Text("Your Feedback")
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
@@ -399,7 +415,7 @@ public struct FeedbackSheet: View {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.system(size: 28))
                             .foregroundColor(.secondary.opacity(0.5))
-                        Text("No feedback yet. Be the first!")
+                        Text("You haven't submitted any feedback yet.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }

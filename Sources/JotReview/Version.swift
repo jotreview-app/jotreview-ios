@@ -2,5 +2,5 @@ import Foundation
 
 /// Current version of the JotReview Swift SDK.
 public enum JotReviewVersion {
-    public static let current = "1.2.2"
+    public static let current = "1.2.5"
 }
