@@ -85,6 +85,7 @@ internal final class FeedbackViewModel: ObservableObject {
     func submit(
         title: String,
         description: String?,
+        attachmentUrls: [String],
         board: String?,
         config: JotReviewConfig,
         user: UserIdentity?
@@ -100,6 +101,7 @@ internal final class FeedbackViewModel: ObservableObject {
                 projectId: config.projectId,
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 description: description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                attachmentUrls: attachmentUrls.isEmpty ? nil : attachmentUrls,
                 user: user
             )
             _ = try await APIClient.shared.submitFeedback(
@@ -162,6 +164,7 @@ public struct FeedbackSheet: View {
 
     @State private var title: String = ""
     @State private var descriptionText: String = ""
+    @State private var attachmentUrls: [String] = []
 
     let config: JotReviewConfig
     let user: UserIdentity?
@@ -184,6 +187,7 @@ public struct FeedbackSheet: View {
                     submitFormSection
                     divider
                     existingRequestsSection
+                    poweredByFooter
                 }
             }
             .background(PlatformColor.groupedBackground)
@@ -244,6 +248,15 @@ public struct FeedbackSheet: View {
                     )
             }
 
+            // Image attachments (PRO+ feature)
+            if config.imageAttachmentsEnabled {
+                ImageAttachmentView(
+                    projectId: config.projectId,
+                    baseURL: config.baseURL,
+                    urls: $attachmentUrls
+                )
+            }
+
             // Submit button + state
             submitButton
 
@@ -264,6 +277,7 @@ public struct FeedbackSheet: View {
                 await viewModel.submit(
                     title: title,
                     description: desc,
+                    attachmentUrls: attachmentUrls,
                     board: board,
                     config: config,
                     user: user
@@ -271,6 +285,7 @@ public struct FeedbackSheet: View {
                 if viewModel.submitState == .success {
                     title = ""
                     descriptionText = ""
+                    attachmentUrls = []
                 }
             }
         } label: {
@@ -371,6 +386,25 @@ public struct FeedbackSheet: View {
                 .padding(.bottom, 16)
             }
         }
+    }
+
+    // MARK: - Powered By Footer
+
+    private var poweredByFooter: some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Text("Powered by")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.5))
+            Text("JotReview")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+            Text("v\(JotReviewVersion.current)")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary.opacity(0.35))
+            Spacer()
+        }
+        .padding(.vertical, 12)
     }
 }
 

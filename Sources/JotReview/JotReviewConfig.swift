@@ -10,4 +10,7 @@ internal struct JotReviewConfig {
 
     /// Workspace display info fetched asynchronously after setup.
     var workspace: WorkspaceInfo?
+
+    /// Whether the workspace plan supports image attachments (PRO+ feature).
+    var imageAttachmentsEnabled: Bool = false
 }

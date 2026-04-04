@@ -62,25 +62,39 @@ internal final class APIClient: Sendable {
 
     // MARK: - Public Endpoints
 
-    /// Fetches workspace display configuration.
+    /// Response from the init endpoint containing workspace info and feature flags.
+    struct InitResult {
+        let workspace: WorkspaceInfo
+        let imageAttachmentsEnabled: Bool
+    }
+
+    /// Fetches workspace display configuration and feature flags.
     ///
     /// **GET** `/api/widget/v1/init?projectId=<id>`
     ///
-    /// - Returns: A `WorkspaceInfo` value on success.
-    func fetchInit(projectId: String, baseURL: String) async throws -> WorkspaceInfo {
+    /// - Returns: An `InitResult` containing workspace info and feature flags.
+    func fetchInit(projectId: String, baseURL: String) async throws -> InitResult {
         let url = try buildURL(base: baseURL, path: "/api/widget/v1/init", queryItems: [
             URLQueryItem(name: "projectId", value: projectId),
         ])
 
         let data = try await performGET(url: url)
 
+        struct Features: Decodable {
+            let image_attachments: Bool?
+        }
+
         struct Envelope: Decodable {
             let workspace: WorkspaceInfo
+            let features: Features?
         }
 
         do {
             let envelope = try decoder.decode(Envelope.self, from: data)
-            return envelope.workspace
+            return InitResult(
+                workspace: envelope.workspace,
+                imageAttachmentsEnabled: envelope.features?.image_attachments ?? false
+            )
         } catch {
             throw JotReviewError.decodingError(error)
         }
@@ -187,6 +201,54 @@ internal final class APIClient: Sendable {
         do {
             let response = try decoder.decode(VoteResponse.self, from: responseData)
             return response
+        } catch {
+            throw JotReviewError.decodingError(error)
+        }
+    }
+
+    /// Uploads an image to the server and returns the public URL.
+    ///
+    /// **POST** `/api/widget/v1/upload` (multipart/form-data)
+    ///
+    /// - Parameters:
+    ///   - projectId: The workspace project ID.
+    ///   - baseURL: The server base URL.
+    ///   - imageData: The image file data (JPEG, PNG, GIF, or WebP).
+    ///   - filename: The filename for the upload.
+    ///   - mimeType: The MIME type (e.g. "image/jpeg").
+    /// - Returns: The public URL of the uploaded image.
+    func uploadImage(projectId: String, baseURL: String, imageData: Data, filename: String, mimeType: String) async throws -> String {
+        let url = try buildURL(base: baseURL, path: "/api/widget/v1/upload")
+
+        let boundary = UUID().uuidString
+        var body = Data()
+
+        // projectId field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"projectId\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(projectId)\r\n".data(using: .utf8)!)
+
+        // file field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+
+        let responseData = try await execute(request)
+
+        struct UploadResponse: Decodable {
+            let url: String
+        }
+
+        do {
+            let response = try decoder.decode(UploadResponse.self, from: responseData)
+            return response.url
         } catch {
             throw JotReviewError.decodingError(error)
         }

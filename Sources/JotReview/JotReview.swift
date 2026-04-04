@@ -43,15 +43,16 @@ public final class JotReview {
         shared.config = JotReviewConfig(projectId: projectId, baseURL: baseURL)
         shared.visitorId = VisitorIdStore.getOrCreate()
 
-        // Fetch workspace config in background
+        // Fetch workspace config and feature flags in background
         Task {
             do {
-                let workspace = try await APIClient.shared.fetchInit(
+                let result = try await APIClient.shared.fetchInit(
                     projectId: projectId,
                     baseURL: baseURL
                 )
                 await MainActor.run {
-                    shared.config?.workspace = workspace
+                    shared.config?.workspace = result.workspace
+                    shared.config?.imageAttachmentsEnabled = result.imageAttachmentsEnabled
                 }
             } catch {
                 print("[JotReview] Setup warning: Could not fetch workspace config: \(error.localizedDescription)")

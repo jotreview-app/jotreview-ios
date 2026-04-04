@@ -5,7 +5,16 @@ internal struct SubmitData: Encodable {
     let projectId: String
     let title: String
     let description: String?
+    let attachmentUrls: [String]?
     let user: SubmitUser?
+
+    enum CodingKeys: String, CodingKey {
+        case projectId
+        case title
+        case description
+        case attachmentUrls = "attachment_urls"
+        case user
+    }
 
     /// Nested user identity sent alongside the submission.
     struct SubmitUser: Encodable {
@@ -18,10 +27,11 @@ internal struct SubmitData: Encodable {
     }
 
     /// Convenience initializer that maps from a `UserIdentity`.
-    init(projectId: String, title: String, description: String?, user: UserIdentity?) {
+    init(projectId: String, title: String, description: String?, attachmentUrls: [String]? = nil, user: UserIdentity?) {
         self.projectId = projectId
         self.title = title
         self.description = description
+        self.attachmentUrls = attachmentUrls
         self.user = user.map { identity in
             SubmitUser(
                 id: identity.id,
