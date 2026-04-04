@@ -82,6 +82,10 @@ internal final class FeedbackViewModel: ObservableObject {
 
     // MARK: - Submit Feedback
 
+    /// Whether the form should be cleared. Set to `true` on successful submit,
+    /// observed by the view to reset fields.
+    @Published var shouldClearForm: Bool = false
+
     func submit(
         title: String,
         description: String?,
@@ -110,6 +114,7 @@ internal final class FeedbackViewModel: ObservableObject {
                 data: submitData
             )
             submitState = .success
+            shouldClearForm = true
 
             // Refresh the list so the new item appears
             await loadRequests(config: config)
@@ -202,6 +207,14 @@ public struct FeedbackSheet: View {
                 }
             }
             .task { await viewModel.loadRequests(config: config) }
+            .onChange(of: viewModel.shouldClearForm) { cleared in
+                if cleared {
+                    title = ""
+                    descriptionText = ""
+                    attachmentUrls = []
+                    viewModel.shouldClearForm = false
+                }
+            }
         }
         #if os(iOS)
         .navigationViewStyle(.stack)
@@ -282,11 +295,6 @@ public struct FeedbackSheet: View {
                     config: config,
                     user: user
                 )
-                if viewModel.submitState == .success {
-                    title = ""
-                    descriptionText = ""
-                    attachmentUrls = []
-                }
             }
         } label: {
             HStack(spacing: 8) {
